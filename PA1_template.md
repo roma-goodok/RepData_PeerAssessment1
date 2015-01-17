@@ -1,23 +1,21 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+# Reproducible Research: Peer Assessment 1
 ### Environment info
-```{r}
+
+```r
 setwd("C:/Data/Coursera/repdata-010/RepData_PeerAssessment1")
 ```
-```{r, echo=TRUE}
+
+```r
 rversion <- R.Version()$version.string
 sysname <- Sys.info()["sysname"]
 sys.release <- Sys.info()["release"]
 ```
-`r rversion`  
-OS Version: `r sysname`, `r sys.release`
+R version 3.1.2 (2014-10-31)  
+OS Version: Windows, 7 x64
 
 ## Loading and preprocessing the data
-```{r}
+
+```r
 #check have we loaded data:
 if (!file.exists("data")) {     
   dir.create("data")  
@@ -47,55 +45,24 @@ if (!file.exists(csv_filename)) {
   dataSource.info <- paste0(csv_filename,"', unzipped from zip '", zip_filename, "', downloaded on ", zip.file.ctime, "")    
 } else   
 {
-  dataSource.info <- paste0("local file: '", csv_filename, "'");
+  dataSource.info <- csv_filename
 }
 
 activity <- read.csv(csv_filename)
-
 ```
-Data source: `r dataSource.info`
+Data source: ./data/activity.csv', unzipped from zip './data/activity.zip', downloaded on 2015-01-17 23:36:23
 
 
 # What is mean total number of steps taken per day?
-```{r}
-library(dplyr)
 
-mean(sapply(split(activity$steps, activity$date), sum, na.rm = TRUE))
-
-mean(summarise(group_by(activity, date), steps = sum(steps, na.rm = TRUE))$steps)
-
-summary(activity)
-```
 
 
 ## What is the average daily activity pattern?
 
-by_int <- summarise(group_by(activity, interval), steps = mean(steps, na.rm = TRUE))
-summary(by_int)
-barplot(by_int$steps)
+
 
 ## Imputing missing values
-```{r}
-na_distrib <- summarise(group_by(activity, interval), NA_steps = sum(is.na(steps)))
-barplot(na_distrib$NA_steps)
 
-na_distrib_by_date <- summarise(group_by(activity, date), NA_steps = sum(is.na(steps)))
-barplot(na_distrib_by_date$NA_steps)
-
-filter(na_distrib_by_date, NA_steps != 0)
-
-image(tapply(!is.na(activity$steps), list(activity$interval, activity$date), sum), ylab = "date period", xlab = "5 minute intervals", main = "NA value 2D distribution")
-
-
-
-
-
-
-
-
-```
-tapply(activity, list("interval", "data"))
-sum(is.na(activity$steps))
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
