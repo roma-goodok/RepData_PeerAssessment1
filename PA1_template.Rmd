@@ -7,11 +7,13 @@ output:
 ### Environment info
 ```{r}
 setwd("C:/Data/Coursera/repdata-010/RepData_PeerAssessment1")
-```
-```{r, echo=TRUE}
 rversion <- R.Version()$version.string
 sysname <- Sys.info()["sysname"]
 sys.release <- Sys.info()["release"]
+
+# libraries:
+library(dplyr) 
+library(ggplot2)
 ```
 `r rversion`  
 OS Version: `r sysname`, `r sys.release`
@@ -44,58 +46,135 @@ if (!file.exists(csv_filename)) {
   close(con)
   
   
-  dataSource.info <- paste0(csv_filename,"', unzipped from zip '", zip_filename, "', downloaded on ", zip.file.ctime, "")    
+  dataSource.info <- paste0(csv_filename,"', has been unzipped from the file '", zip_filename, "', downloaded on ", zip.file.ctime, "")    
 } else   
 {
-  dataSource.info <- paste0("local file: '", csv_filename, "'");
+  dataSource.info <- paste0("local file '", csv_filename, "'");
 }
 
 activity <- read.csv(csv_filename)
-
 ```
 Data source: `r dataSource.info`
 
+#### some  preprocessing
 
-# What is mean total number of steps taken per day?
+As we can see, in fact "interval" does not mean integer sequence, it is time mark in format HHMM, where HH is hours, and MM is minutes:  
 ```{r}
-library(dplyr)
 
-mean(sapply(split(activity$steps, activity$date), sum, na.rm = TRUE))
+interval_distinct_count <- dim(table(activity$interval))
+minutes_in_day = 60*24
 
-mean(summarise(group_by(activity, date), steps = sum(steps, na.rm = TRUE))$steps)
+ts <- paste0("000", activity$interval)
+activity$time <- as.POSIXct(strptime(paste0("01/01/2012",substr(ts, nchar(ts)-3, nchar(ts))), "%d/%m/%Y %H%M"))
 
-summary(activity)
+activity[10:15,]
+
 ```
+Total distinct count of interval values is `r interval_distinct_count` and 2*`r interval_distinct_count` is equal minutes in day count `r minutes_in_day`  
 
+
+## What is mean total number of steps taken per day?
+
+#### Histogram of the total number of steps taken each day    
+
+```{r}
+
+# (We can find it by several ways)
+# split activities by date and calculate steps count for every date
+steps.per.day <- summarise(group_by(activity, date), steps = sum(steps, na.rm = TRUE))
+
+mean.per.day <- mean(steps.per.day$steps);
+median.per.day <- median(steps.per.day$steps);
+
+hist(steps.per.day$steps, breaks = 20, xlab = "steps in day", ylab = "days", main = "number of steps taken each day")
+abline(v = mean.per.day, col = "red", lty = 1)
+abline(v = median.per.day, col = "blue", lty = 1)
+legend("topright", bty="n", col = c("red", "blue"), legend = c("mean", "median"),
+     lty=c(1,1,1), 
+     lwd=c(1,1,1)) 
+```
+  
+#### Calculate and report the mean and median total number of steps taken per day   
+Mean of total number of steps taken per day is `r mean.per.day`
+Median of total number of steps taken per day is `r median.per.day`
 
 ## What is the average daily activity pattern?
 
-by_int <- summarise(group_by(activity, interval), steps = mean(steps, na.rm = TRUE))
-summary(by_int)
-barplot(by_int$steps)
-
-## Imputing missing values
+Time series plot  of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)  
 ```{r}
-na_distrib <- summarise(group_by(activity, interval), NA_steps = sum(is.na(steps)))
-barplot(na_distrib$NA_steps)
 
-na_distrib_by_date <- summarise(group_by(activity, date), NA_steps = sum(is.na(steps)))
-barplot(na_distrib_by_date$NA_steps)
+steps.by.interval <- summarise(group_by(activity, time, interval), steps = mean(steps, na.rm = TRUE))
+max.avg.steps <- max(steps.by.interval$steps)
+max.interval <- filter(steps.by.interval, steps == max.avg.steps)
 
-filter(na_distrib_by_date, NA_steps != 0)
-
-image(tapply(!is.na(activity$steps), list(activity$interval, activity$date), sum), ylab = "date period", xlab = "5 minute intervals", main = "NA value 2D distribution")
-
-
-
-
-
+plot(x = steps.by.interval$time, y = steps.by.interval$steps, type="l", col = "blue", xlab = "time", ylab = "steps", main = "average steps across \n all the days in the dataset")
+abline(h = mean(steps.by.interval$steps), col = "red", lty = 2)
+abline(v = max.interval, col = "green", lty = 2)
+legend("topright", bty="n", col = c("blue", "red", "green"), legend = c("steps", "avg", "time of max"),
+     lty=c(1,1,1), 
+     lwd=c(1,1,1)) 
 
 
 
 ```
-tapply(activity, list("interval", "data"))
-sum(is.na(activity$steps))
+   
+5-minute interval, which contains the maximum number of average steps across all the days is `r max.interval$interval` (r max.interval$time)  
+maximum number of avarage steps across all the days is `r max.avg.steps`
+
+## Imputing missing values
+
+Total NAs by column:
+```{r}
+apply(activity, 2, function(x) {sum(is.na(x))})
+
+steps.NAs <- sum(is.na(activity$steps))
+steps.NA.percent <- format(mean(is.na(activity$steps))*100, digits = 4)
+```
+Total number of rows with NAs: `r steps.NAs` (`r steps.NA.percent` %)
+
+```{r}
+na.by.date <- summarise(group_by(activity, date), NA_steps = sum(is.na(steps)))
+qplot(x = as.POSIXct(na.by.date$date), y = na.by.date$NA_steps, xlab = "date", ylab = "N/A steps value count", main = "N/A steps value distribution")
+```
+
+As we can see, we have 8 days without any measures.
+Let's fill this values by average steps count per intervals accross all aviable date
+```{r}
+NA.date.list <- filter(na.by.date, NA_steps > 0)$date
+
+xx <- data.frame (date = rep(NA.date.list, each = nrow(steps.by.interval)), steps.by.interval)
+
+activity.processed <- activity;
+for (i in NA.date.list){ 
+ activity.processed[activity.processed$date == i,]$steps <- steps.by.interval$steps
+ } 
+
+
+steps.per.day.p <- summarise(group_by(activity.processed, date), steps = sum(steps, na.rm = TRUE))
+
+mean.per.day.p <- mean(steps.per.day.p$steps);
+median.per.day.p <- median(steps.per.day.p$steps);
+
+hist(steps.per.day.p$steps, breaks = 20, xlab = "steps in day", ylab = "days", main = "number of steps taken each day")
+abline(v = mean.per.day.p, col = "red", lty = 1)
+abline(v = median.per.day.p, col = "blue", lty = 1)
+legend("topright", bty="n", col = c("red", "blue"), legend = c("mean", "median"),
+     lty=c(1,1,1), 
+     lwd=c(1,1,1)) 
+```
+  
+####After processing: the mean and median total number of steps taken per day   ()
+Mean of total number of steps taken per day is `r mean.per.day.p`
+Median of total number of steps taken per day is `r median.per.day.p`
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+
+```{r}
+activity.processed$w <- weekdays(as.POSIXct(activity.processed$date)) %in% c("Saturday", "Sunday")
+steps.by.interval <- summarise(group_by(activity.processed, time, interval, w), steps = mean(steps, na.rm = TRUE))
+
+qplot(x = time, y = steps, data = steps.by.interval,  facets = .~w, geom = "line", main = "not Weekend | weekend")
+```
+
